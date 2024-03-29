@@ -48,13 +48,13 @@ def setup_basics(accelerator, logger, args):
         tags = [""]
     PROJECT_NAME = os.getenv("PROJECT_NAME_NEPTUNE")
     API_TOKEN_NEPTUNE = os.getenv("API_TOKEN_NEPTUNE")
-    run = neptune.init_run(
-        project=PROJECT_NAME,
-        tags=tags,  # custom_run_id,
-        api_token=API_TOKEN_NEPTUNE,
-    )
+    # run = neptune.init_run(
+    #     project=PROJECT_NAME,
+    #     tags=tags,  # custom_run_id,
+    #     api_token=API_TOKEN_NEPTUNE,
+    # )
 
-    return run
+    return 
 
 
 def neptune_log(run, pref, stats, epoch):

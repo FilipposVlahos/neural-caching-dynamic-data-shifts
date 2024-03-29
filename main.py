@@ -35,7 +35,7 @@ def main():
     run = setup_basics(accelerator, logger, args)
 
     # Pre-Logging
-    run["args"] = vars(args)
+    # run["args"] = vars(args)
     set_seeds(args.seed)
 
     task = get_task(

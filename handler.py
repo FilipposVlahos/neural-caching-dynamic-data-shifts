@@ -189,6 +189,7 @@ class handler_LLM:
 
         self.output = self.student.query(input)
 
+        # why 1* 
         self.st_acc = int(
             1
             * (self.output.copy()[0].argsort()[-1] == input.gold_soft.argsort()[0][-1])

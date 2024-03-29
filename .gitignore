@@ -17,3 +17,4 @@ scripts/experiments/*
 scripts/run_*
 pre-processing/*
 figures/*
+cached_llm/*
