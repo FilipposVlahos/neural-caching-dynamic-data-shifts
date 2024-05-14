@@ -208,6 +208,17 @@ def parse_args():
         default="",
         help="Neptune tags. String delimited by ,",
     )
+    parser.add_argument(
+        "--with_shift",
+        type=str,
+        default="",
+        choices=['label', 'covariate'],
+        help='''
+        Add distribution shift to the incoming data.
+          label: A shift that affects the output distribution y. 
+          covaiate: A shift that affects the input distribution.
+        ''',
+    )
 
     args = parser.parse_args()
 

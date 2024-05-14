@@ -9,12 +9,15 @@ from functools import partial
 import pandas as pd
 import ast
 import json
-import pdb
+from shifts import (
+    label_shift, covariate_shift
+    )
 
 
 class Task:
-    def __init__(self, task_name, tokenizer, soft_labels):
+    def __init__(self, task_name, tokenizer, soft_labels, with_shift):
         self.task_name = task_name
+        self.with_shift = with_shift
         DATA_DIR = os.getenv("DATA_PATH")
         self.path = os.path.join(DATA_DIR, task_name)
         self.tokenizer = tokenizer
@@ -37,10 +40,16 @@ class Task:
             fin = pd.read_csv(
                 os.path.join(self.path, split_path),
             )
-            if self.task_name == "ag_news":
-                fin = pd.read_csv(os.path.join(self.path, split_path), nrows=10000)
-                if split == "test":
-                    fin = pd.read_csv(os.path.join(self.path, split_path), nrows=1000)
+            # if self.task_name == "ag_news":
+            #     fin = pd.read_csv(os.path.join(self.path, split_path), nrows=10000)
+            #     if split == "test":
+            #         fin = pd.read_csv(os.path.join(self.path, split_path), nrows=1000)
+            # Perform synthetic dataset operations here.
+            if self.with_shift=='label':
+                fin = label_shift(fin)
+                print(fin)
+            if self.with_shift=='covaiate':
+                fin = covariate_shift(fin)
             inputs = list(fin["input"].values.astype(str))
             gold_hard = list(fin["gold_hard"].values.astype(str))
             if "llm_soft" in fin.columns:
@@ -231,7 +240,7 @@ def get_task(accelerator, args, model=None):
     )
 
     # load config, data, and preprocess
-    task = Task(args.task_name, tokenizer, args.soft_labels)
+    task = Task(args.task_name, tokenizer, args.soft_labels, args.with_shift)
     if task.is_classification:
         task.load_classes()
     task.preprocess(accelerator, args, model=None)
