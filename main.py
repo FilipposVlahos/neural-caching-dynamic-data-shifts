@@ -35,7 +35,7 @@ def main():
     run = setup_basics(accelerator, logger, args)
 
     # Pre-Logging
-    # run["args"] = vars(args)
+    run["args"] = vars(args)
     set_seeds(args.seed)
 
     task = get_task(
@@ -115,12 +115,12 @@ def main():
                 budgets,
                 wrap.performance,
             )
-            # neptune_log(
-            #     run=run,
-            #     pref=f"online/",
-            #     stats=stats,
-            #     epoch=step,
-            # )
+            neptune_log(
+                run=run,
+                pref=f"online/",
+                stats=stats,
+                epoch=step,
+            )
             if step == 0 or (args.checkpoint != "-1" and step == args.n_init):
                 avg_online = reset_avg_online_metrics(stats)
             avg_online = update_online_metrics(avg_online, stats)

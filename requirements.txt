@@ -1,7 +1,7 @@
-accelerate
-datasets >= 1.8.0
-sentencepiece != 0.1.92
-transformers
+accelerate==0.24.1
+datasets==2.14.6
+sentencepiece==0.1.99
+transformers==4.34.1
 evaluate >= 0.2.0
 scipy
 scikit-learn
@@ -9,3 +9,4 @@ protobuf
 neptune-client
 rouge
 backoff
+# neptune
