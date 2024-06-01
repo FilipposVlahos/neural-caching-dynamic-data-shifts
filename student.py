@@ -86,10 +86,7 @@ class student:
         with torch.no_grad():
             if self.soft_labels:
                 predictions = self.model.generate(
-                    **{
-                        "input_ids": input["input_ids"].cuda(),
-                        "attention_mask": input["attention_mask"].cuda(),
-                    },
+                    **self.prepare_input_for_gpu(input),
                     max_new_tokens=1,
                     output_scores=True,
                     return_dict_in_generate=True,
@@ -101,10 +98,7 @@ class student:
                 ]
             else:
                 predictions = self.model.generate(
-                    **{
-                        "input_ids": input["input_ids"].cuda(),
-                        "attention_mask": input["attention_mask"].cuda(),
-                    },
+                    **self.prepare_input_for_gpu(input),
                     num_beams=self.args.num_beams,
                     max_length=self.args.max_out_length,
                     decoder_start_token_id=self.model.model.config.bos_token_id,
@@ -277,6 +271,11 @@ class student:
             )
             torch.save(self.model.state_dict(), PATH_DEST)
 
+    def prepare_input_for_gpu(self, input):
+        return {
+                    "input_ids": input["input_ids"].cuda(),
+                    "attention_mask": input["attention_mask"].cuda(),
+                }
 
 class aux_student:
     def __init__(self, model, args, task):

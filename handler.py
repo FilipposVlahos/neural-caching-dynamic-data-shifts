@@ -104,6 +104,9 @@ class handler_LLM:
         self.cache["llm_hard"].append(torch.flatten(input.llm_hard).tolist())
 
     def decide(self, input):
+        '''
+        Decide whether to use budget for LLM prediction and to teach student model.
+        '''
         if self.oracle and not self.oracle_check(input):
             return False
         if self.oracle_BT and not self.oracle_check_BT(input):
@@ -189,18 +192,7 @@ class handler_LLM:
 
         self.output = self.student.query(input)
 
-        # why 1* 
-        self.st_acc = int(
-            1
-            * (self.output.copy()[0].argsort()[-1] == input.gold_soft.argsort()[0][-1])
-        )
-        self.llm_acc = int(
-            1
-            * (
-                self.call_llm(input)[0].argsort()[-1]
-                == input.gold_soft.argsort()[0][-1]
-            )
-        )
+        self.calculate_acc(input)
 
         previous_outputs = []
         for budget_model in self.budget_models:
@@ -225,6 +217,19 @@ class handler_LLM:
         return len(self.budget_arr) * [0], previous_outputs + new_budgets * [
             self.output
         ]
+
+    def calculate_acc(self, input):
+        self.st_acc = int(
+            1
+            * (self.output.copy()[0].argsort()[-1] == input.gold_soft.argsort()[0][-1])
+        )
+        self.llm_acc = int(
+            1
+            * (
+                self.call_llm(input)[0].argsort()[-1]
+                == input.gold_soft.argsort()[0][-1]
+            )
+        )
 
     def make_assembly(self, input):
         target = self.output[0].argmax()

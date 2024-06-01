@@ -127,7 +127,7 @@ def main():
 
             if wrap.retrain or (
                 step + 1 and (step + 1) % args.retrain_freq == 0 and not stop_retraining
-            ):
+            ): # Retrain Student 
                 set_seeds(args.seed)
                 wrap.BT = []
                 cache = wrap.retrieve_cache()
