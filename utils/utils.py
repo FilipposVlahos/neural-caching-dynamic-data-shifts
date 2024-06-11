@@ -10,7 +10,7 @@ import numpy as np
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 from accelerate.utils import set_seed
-import neptune.new as neptune
+import neptune 
 import pdb
 
 

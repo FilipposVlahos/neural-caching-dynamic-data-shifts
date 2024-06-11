@@ -6,7 +6,6 @@ evaluate >= 0.2.0
 scipy
 scikit-learn
 protobuf
-neptune-client
+neptune
 rouge
 backoff
-# neptune
