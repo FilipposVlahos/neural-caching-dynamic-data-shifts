@@ -46,6 +46,7 @@ class handler_LLM:
         self.labels_embeds = {}
         self.retrain = False
         self.update = False
+        self.steps = []
         if self.strat == "CS":
             self.encoder = copy.deepcopy(self.student.model.model).cpu()
 
@@ -79,15 +80,18 @@ class handler_LLM:
         del self.cache
         return
 
-    def save_cache(self, input):
-        if self.oracle:
-            if not self.oracle_check(input):
-                return
+    def save_cache(self, input, step):
+        '''
+        Cache here contains the data that the student model will be trained on. 
+        '''
+        if self.oracle and not self.oracle_check(input):
+            return
         aux = copy.deepcopy(torch.flatten(input.llm_soft).tolist())
         aux.sort()
         aux = aux[-1] - aux[-2]
         if self.ignore_llm > 0 and aux <= self.ignore_llm:
             return
+        print('Gold hard', [torch.flatten(input.gold_hard).tolist()])
         if not "input_ids" in self.cache:
             self.cache["input_ids"] = [torch.flatten(input.input_ids).tolist()]
             self.cache["gold_hard"] = [torch.flatten(input.gold_hard).tolist()]
@@ -102,6 +106,7 @@ class handler_LLM:
             self.cache["gold_soft"].append(torch.flatten(input.gold_soft).tolist())
             self.cache["llm_soft"].append(torch.flatten(input.llm_soft).tolist())
         self.cache["llm_hard"].append(torch.flatten(input.llm_hard).tolist())
+        self.steps.append(step)
 
     def decide(self, input):
         '''
@@ -143,6 +148,7 @@ class handler_LLM:
                 if self.BT[-1] < self.hparam:
                     return True
             if self.strat == "MV":
+                # here 5 6
                 if len(self.student_vec) < 5 or self.make_assembly(input):
                     return True
             if self.strat == "CS":
@@ -184,7 +190,16 @@ class handler_LLM:
         self.labels_embeds[len(list(self.labels_embeds.keys()))] = self.output
         return
 
-    def query(self, input):
+    def query(self, input, step):
+        '''
+        Returns two values (decision, prediction)
+        * decision: if LLM used 1, otherwise 0
+        * prediction:  
+        Also sets wrap.performance which is a 3-digit binary number. Digit:
+        * 1: the decision
+        * 2: student acc
+        * 3: llm acc 
+        '''
         self.n_online += 1
         self.missing -= 1
         new_budgets = len(self.budget_arr) - len(self.budget_models)
@@ -206,7 +221,7 @@ class handler_LLM:
 
         if self.decide(input):
             self.output = self.call_llm(input)
-            self.save_cache(input)
+            self.save_cache(input, step)
             self.performance = "1" + str(self.st_acc) + str(self.llm_acc)
             if self.strat == "CS":
                 self.save_embed()
@@ -214,9 +229,7 @@ class handler_LLM:
                 1
             ], previous_outputs + new_budgets * [self.output]
         self.performance = "0" + str(self.st_acc) + str(self.llm_acc)
-        return len(self.budget_arr) * [0], previous_outputs + new_budgets * [
-            self.output
-        ]
+        return len(self.budget_arr) * [0], previous_outputs + new_budgets * [self.output]
 
     def calculate_acc(self, input):
         self.st_acc = int(
@@ -250,6 +263,7 @@ class handler_LLM:
     def reorder_students(self):
         # First case: we do MV, we don't support multiple budgets
         if self.strat == "MV":
+            # here 5 6
             if len(self.student_vec) == 5:
                 for idx in range(4):
                     self.student_vec[idx] = copy.deepcopy(

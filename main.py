@@ -11,6 +11,7 @@ from utils.online_logs import (
     log_avg_online,
     log_test,
     log_final,
+    log_examples_selected,
 )
 import numpy as np
 from metrics import Metric
@@ -31,6 +32,7 @@ logger = get_logger(__name__)
 
 def main():
     args = parse_args()
+    print(args)
     accelerator = Accelerator()
     run = setup_basics(accelerator, logger, args)
 
@@ -51,11 +53,13 @@ def main():
         )
     online_dataloader = task.data["online_dataloader"]
     st = student(args, task, run, accelerator)
+    print('Progress: Loaded Student')
     budgets = [int(b) for b in args.budget.split(",")]
 
     wrap = handler_LLM(args, st, task)
+    print('Progress: Wrap Handler Loaded')
     metric = Metric(args, soft=args.soft_labels, online=True)
-
+    print("Progress: Metric Loaded")
     # Initialize student model
     # If we put a checkpoint, we load the model and we skip the first $checkpoint steps
     if args.checkpoint != "-1":
@@ -66,6 +70,8 @@ def main():
                 + args.task_name
                 + "/"
                 + str(args.checkpoint.split("_")[0])
+                + "_"
+                + str(args.checkpoint.split("_")[1])
                 + "_500.pt"
             )
         st.init_checkpoint(PATH)
@@ -74,7 +80,7 @@ def main():
         if args.strategy == "MV":
             for idx in range(5):
                 st_aux = student(args, task, run, accelerator)
-                aux_name = int(args.checkpoint.split("_")[1])
+                aux_name = int(args.checkpoint.split("_")[2])
                 if args.n_init == 100:
                     aux_name = 500
                 PATH_AUX = (
@@ -82,6 +88,8 @@ def main():
                     + args.task_name
                     + "/"
                     + str(args.checkpoint.split("_")[0])
+                    + "_"
+                    + str(args.checkpoint.split("_")[1])
                     + "_"
                     + str(aux_name - 400 + 100 * idx)
                     + ".pt"
@@ -92,19 +100,21 @@ def main():
 
     stop_retraining = args.strategy == "EM_raw"
     send_update = False
-
+    all_pred = []
+    x_samples_pred = []
+    print("Progress: Simulation Starts")
     for step, sample in enumerate(online_dataloader):
-
+        print('Step:', step)
+        # if using checkpoints, and are within n_init - save LLM response  
         if args.checkpoint != "-1" and step < args.n_init:
-            wrap.save_cache(sample)
+            wrap.save_cache(sample, step)
             if args.strategy == "CS":
                 wrap.output = wrap.call_llm(sample)
                 wrap.obtain_embed(sample)
                 wrap.save_embed()
-
-        if args.checkpoint == "-1" or step >= args.n_init:
+        else:
             gc.collect()
-            decision, pred = wrap.query(sample)
+            decision, pred = wrap.query(sample, step)
 
             stats = get_online_metrics_mult(
                 args,
@@ -114,6 +124,8 @@ def main():
                 decision,
                 budgets,
                 wrap.performance,
+                all_pred,
+                x_samples_pred
             )
             neptune_log(
                 run=run,
@@ -128,6 +140,7 @@ def main():
             if wrap.retrain or (
                 step + 1 and (step + 1) % args.retrain_freq == 0 and not stop_retraining
             ): # Retrain Student 
+                print('Retraining student')
                 set_seeds(args.seed)
                 wrap.BT = []
                 cache = wrap.retrieve_cache()
@@ -156,6 +169,7 @@ def main():
                 avg_online = reset_avg_online_metrics(stats)
                 send_update = False
                 if step == len(online_dataloader) - 1:
+                    log_examples_selected(run, wrap.steps)
                     log_final(run)
 
     if run is not None:

@@ -52,6 +52,8 @@ class student:
         self.test_scores_gold = [0, 0]
         self.test_scores_llm = [0, 0]
         self.suffixes = [""]
+        self.with_shift = args.with_shift
+        self.shift_order = args.shift_order
         if task.is_classification:
             self.dic_classes = list(task.classes_dict_gold.values())
         else:
@@ -103,6 +105,8 @@ class student:
                     max_length=self.args.max_out_length,
                     decoder_start_token_id=self.model.model.config.bos_token_id,
                 )
+
+        print('Predictions', predictions)
         return predictions
 
     def evaluate(self):
@@ -117,16 +121,16 @@ class student:
             target="gold",
         )
 
-        self.metric_test.reset()
-        test_metric_wrong_gold = evaluate_model(
-            model=self.model,
-            accelerator=self.accelerator,
-            eval_dataloader=self.test_wrong,
-            metric=self.metric_test,
-            args=self.args,
-            dic_classes=self.dic_classes,
-            target="gold",
-        )
+        # self.metric_test.reset()
+        # test_metric_wrong_gold = evaluate_model(
+        #     model=self.model,
+        #     accelerator=self.accelerator,
+        #     eval_dataloader=self.test_wrong,
+        #     metric=self.metric_test,
+        #     args=self.args,
+        #     dic_classes=self.dic_classes,
+        #     target="gold",
+        # )
 
         self.metric_test.reset()
         test_metric_llm = evaluate_model(
@@ -138,22 +142,22 @@ class student:
             dic_classes=self.dic_classes,
             target="llm",
         )
-        test_metric_wrong_llm = evaluate_model(
-            model=self.model,
-            accelerator=self.accelerator,
-            eval_dataloader=self.test_wrong,
-            metric=self.metric_test,
-            args=self.args,
-            dic_classes=self.dic_classes,
-            target="llm",
-        )
+        # test_metric_wrong_llm = evaluate_model(
+        #     model=self.model,
+        #     accelerator=self.accelerator,
+        #     eval_dataloader=self.test_wrong,
+        #     metric=self.metric_test,
+        #     args=self.args,
+        #     dic_classes=self.dic_classes,
+        #     target="llm",
+        # )
 
         if self.run is not None:
             stats = {
                 "test_gold_acc": test_metric_gold[0],
                 "test_llm_acc": test_metric_llm[0],
-                "test_wrong_gold_acc": test_metric_wrong_gold[0],
-                "test_wrong_llm_acc": test_metric_wrong_llm[0],
+                # "test_wrong_gold_acc": test_metric_wrong_gold[0],
+                # "test_wrong_llm_acc": test_metric_wrong_llm[0],
                 "data amount": self.data_amount,
             }
 
@@ -260,11 +264,14 @@ class student:
 
         self.evaluate()
         if self.save_checkpoint != "no":
+            print('saving checkpoints')
             PATH_DEST = (
                 "checkpoints/"
                 + self.task_name
                 + "/"
                 + str(self.seed)
+                + "_"
+                + self.with_shift + self.shift_order
                 + "_"
                 + str(len(train_dataloader.dataset) + len(eval_dataloader.dataset))
                 + ".pt"
@@ -321,4 +328,5 @@ class aux_student:
         self.model.cpu()
         input["input_ids"].cuda()
         input["attention_mask"].cuda()
+        print('Predictions Aux', predictions)
         return predictions

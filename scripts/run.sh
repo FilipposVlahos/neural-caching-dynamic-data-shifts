@@ -43,7 +43,11 @@ LORA_SCALING="${LORA_SCALING:=0.25}"
 
 SEED="${SEED=0}"
 
-python -m main \
+WITH_SHIFT="${WITH_SHIFT=label}"
+PERC_RAND="${PERC_RAND=0.1}"
+SHIFT_ORDER="${SHIFT_ORDER=ascending}"
+
+/work/sc126/sc126/filippos/condaenvs/envs/cache/bin/python -m main \
   --model_name_or_path $BASE_MODEL \
   --task_name $TASK_NAME \
   --budget $BUDGET \
@@ -78,4 +82,9 @@ python -m main \
   --weight_decay $WEIGHT_DECAY \
   --tags $TAGS \
   --max_out_length $MAX_OUT_LEN \
-  --seed $SEED
+  --seed $SEED \
+  --with_shift $WITH_SHIFT \
+  --perc_rand $PERC_RAND \
+  --shift_order $SHIFT_ORDER
+
+
