@@ -10,7 +10,7 @@ import pandas as pd
 import ast
 import json
 from shifts import (
-    label_shift, covariate_shift_typos, label_shift_partial
+    label_shift, label_shift_partial, covariate
     )
 import random
 
@@ -179,7 +179,7 @@ class Task:
 
         online_dataloader = DataLoader(
             processed_data["train"],
-            shuffle=True,
+            shuffle=False,
             collate_fn=data_collator,
             batch_size=1,
         )
@@ -262,13 +262,13 @@ def make_datacollator(args, tokenizer, processed_data, model=None):
     aux = processed_data.train_test_split(test_size=0.1)
     train_dataloader = DataLoader(
         aux["train"],
-        shuffle=True,
+        shuffle=False,
         collate_fn=data_collator,
         batch_size=args.per_device_train_batch_size,
     )
     eval_dataloader = DataLoader(
         aux["test"],
-        shuffle=True,
+        shuffle=False,
         collate_fn=data_collator,
         batch_size=args.per_device_eval_batch_size,
     )
@@ -286,7 +286,7 @@ def apply_data_distr_shift(self, fin, split):
     if self.with_shift=='covariate':
         print('Split:', split)
         typos_path = os.path.join(self.path, self.typos_data_path[split])
-        fin = covariate_shift_typos(fin, self.perc_rand, typos_path, self.shift_order, self.seed)
+        fin = covariate(fin, self.shift_order, self.perc_rand, typos_path, self.shift_order, self.seed)
         print('covariate shift typos')
         print(fin['input'])
     return fin
