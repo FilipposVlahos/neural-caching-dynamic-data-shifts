@@ -55,17 +55,6 @@ def parse_args():
         default=1.0,
         help="Temperature for soft labels (softmax)",
     )
-    # parser.add_argument(
-    #     "--only_improve",
-    #     type=int,
-    #     default=0,
-    #     help="If 1, we don't keep a new model if it lowers accuracy",
-    # )
-    # parser.add_argument(
-    #     "--active",
-    #     type=str,
-    #     default="no",
-    # )
     parser.add_argument(
         "--oracle",
         type=int,
@@ -186,10 +175,6 @@ def parse_args():
         "--r",
         type=int,
     )
-    # parser.add_argument(
-    #     "--perm",
-    #     type=int,
-    # )
     parser.add_argument(
         "--lora_scaling",
         type=float,
@@ -231,18 +216,37 @@ def parse_args():
         ''',
     )
     parser.add_argument(
-    "--perc_rand",
-    type=float,
-    default="0.05",
-    help='Percentage of random labels in label_shift_partial ',
+        "--perc_rand",
+        type=float,
+        default="0.05",
+        help='Percentage of random labels in label_shift_partial ',
     )
     parser.add_argument(
-    "--shift_order",
-    type=str,
-    default="ascending",
-    choices=['ascending', 'descending', 'label-agreement', 'none'],
-    help='Order of label shift',
+        "--shift_order",
+        type=str,
+        default="ascending",
+        choices=['random', 'ascending', 'descending', 'label-agreement', 'label-dissagreement', 'cov-typos', 'cov-sentence-length-asc', 'cov-sentence-length-desc', 'none'],
+        help='Order of shift',
     )
+    parser.add_argument(
+        "--empty_cache",
+        type=int,
+        default=0,
+        help='Empty cache every time we retrain i.e. train only on new example each time',
+    )
+    parser.add_argument(
+        "--retrain_fixed",
+        type=int,
+        default=1,
+        help='Retrain after fixed number of API calls',
+    )
+    parser.add_argument(
+        "--dynamic_threshold",
+        type=int,
+        default=0,
+        help='Use dynamic thresholds for AL-based selection policies'
+    )
+
 
     args = parser.parse_args()
 

@@ -9,9 +9,10 @@ from utils.online_logs import (
     reset_avg_online_metrics,
     get_online_metrics_mult,
     log_avg_online,
-    log_test,
     log_final,
     log_examples_selected,
+    log_strategy_data,
+    log_thresholds,
 )
 import numpy as np
 from metrics import Metric
@@ -47,10 +48,7 @@ def main():
     )
     if not task.is_classification:
         args.is_classification = False
-    else:
-        args.soft_labels = (
-            True  # for classification, we always use a soft labels objective
-        )
+    args.soft_labels = True if args.soft_labels == 1 else False
     online_dataloader = task.data["online_dataloader"]
     st = student(args, task, run, accelerator)
     print('Progress: Loaded Student')
@@ -76,6 +74,7 @@ def main():
             )
         st.init_checkpoint(PATH)
         wrap = handler_LLM(args, st, task)
+        print('Progress: Wrap Handler Loaded')
         wrap.student_vec = []
         if args.strategy == "MV":
             for idx in range(5):
@@ -105,7 +104,7 @@ def main():
     print("Progress: Simulation Starts")
     for step, sample in enumerate(online_dataloader):
         print('Step:', step)
-        # if using checkpoints, and are within n_init - save LLM response  
+        # if using checkpoints, and we are within the first n_init data-points - save LLM response  
         if args.checkpoint != "-1" and step < args.n_init:
             wrap.save_cache(sample, step)
             if args.strategy == "CS":
@@ -136,13 +135,11 @@ def main():
             if step == 0 or (args.checkpoint != "-1" and step == args.n_init):
                 avg_online = reset_avg_online_metrics(stats)
             avg_online = update_online_metrics(avg_online, stats)
-
-            if wrap.retrain or (
-                step + 1 and (step + 1) % args.retrain_freq == 0 and not stop_retraining
-            ): # Retrain Student 
+            
+            if should_retrain(args, wrap, stop_retraining, step):
                 print('Retraining student')
                 set_seeds(args.seed)
-                wrap.BT = []
+
                 cache = wrap.retrieve_cache()
                 train_dataloader, eval_dataloader = make_datacollator(
                     args, task.tokenizer, cache
@@ -159,6 +156,8 @@ def main():
                 if step + 1 and (step + 1) % args.retrain_freq == 0: wrap.update = False
 
                 wrap.reorder_students()
+                if args.empty_cache == 1:
+                    wrap.reset_buffer()
                 if wrap.budget_arr[-1] == 0:
                     stop_retraining = True
                     wrap.delete_cache()
@@ -171,10 +170,30 @@ def main():
                 if step == len(online_dataloader) - 1:
                     log_examples_selected(run, wrap.steps)
                     log_final(run)
+                    if args.strategy == 'BT':
+                        log_strategy_data(run, args.strategy, wrap.BT)
+                    elif args.strategy == 'EN':
+                        log_strategy_data(run, args.strategy, wrap.EN)
+                    elif args.strategy == 'CS':
+                        log_strategy_data(run, args.strategy, wrap.CS_similarities)       
+                    if args.dynamic_threshold == 1 and len(wrap.thresholds) > 0:
+                        log_thresholds(run, wrap.thresholds)
 
     if run is not None:
         run.stop()
 
+def should_retrain(args, wrap, stop_retraining, step):
+    '''
+    Determines whether the student model should be retrained.
+    '''
+    if args.retrain_fixed == 1:
+        retrain_clause = (step + 1) % args.retrain_freq == 0
+    elif hasattr(wrap, "cache") and "input_ids" in wrap.cache:
+        retrain_clause = len(wrap.cache["input_ids"]) % args.retrain_freq == 0
+        print('retrain_fixed ii', len(wrap.cache["input_ids"]), retrain_clause)
+    else: 
+        return False
+    return wrap.retrain or (step + 1 and retrain_clause and not stop_retraining)
 
 if __name__ == "__main__":
     main()

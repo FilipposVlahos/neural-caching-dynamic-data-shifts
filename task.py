@@ -278,7 +278,7 @@ def apply_data_distr_shift(self, fin, split):
     # Perform synthetic dataset operations.
     print(self.with_shift)
     if self.with_shift=='label':
-        fin = label_shift(fin, self.shift_order)
+        fin = label_shift(fin, self.shift_order, self.seed)
         print('label')
     if self.with_shift=='label-shift-partial':
         fin = label_shift_partial(fin, self.perc_rand, self.shift_order, self.seed)

@@ -1,11 +1,7 @@
 import torch
-# import pdb
 import os
 import json
 from argparse import Namespace
-# import evaluate
-# from task import get_task
-# from metrics import Metric
 import numpy as np
 from tqdm import tqdm
 from torch.nn import CrossEntropyLoss, Softmax

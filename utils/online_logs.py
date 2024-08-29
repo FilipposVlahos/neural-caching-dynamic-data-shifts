@@ -37,7 +37,16 @@ def log_final(run):
 def log_examples_selected(run, steps):
     print('Steps', steps)
     run['examples_selected/steps'].extend(steps)
-    print('LOGG ----')
+    return
+
+def log_strategy_data(run, strat, data):
+    print('Strategy data', data)
+    run['strategy_data/' + strat].extend(data)
+    return
+
+def log_thresholds(run, data):
+    print('Threshold data', data)
+    run['strategy_data/thresholds'].extend(data)
     return
 
 def reset_avg_online_metrics(stats):
