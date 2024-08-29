@@ -11,14 +11,13 @@ from torch.nn import Softmax
 
 softmax = Softmax()
 
-
 class handler_LLM:
     def __init__(self, args, student, task):
         self.budget_arr = [int(elem) for elem in args.budget.split(",")]
         self.cost = args.cost_ext
         self.budget_models = []
+        self.thresholds = []
         self.active = None
-        self.cache = []
         self.task = task
         self.args = args
         self.checkpoint = args.checkpoint
@@ -39,6 +38,8 @@ class handler_LLM:
         self.BT = []
         self.MV = []
         self.EN = []
+        # Stores the similarity values when the strategy is CS
+        self.CS_similarities = []
         self.output = None
         self.embeds = None
         self.oracle = args.oracle
@@ -46,6 +47,9 @@ class handler_LLM:
         self.labels_embeds = {}
         self.retrain = False
         self.update = False
+        self.steps = []
+        # This could be a parameter, determines the number of data-points considered when using a dynamic threshold.
+        self.window_size_threshold = 50
         if self.strat == "CS":
             self.encoder = copy.deepcopy(self.student.model.model).cpu()
 
@@ -79,10 +83,12 @@ class handler_LLM:
         del self.cache
         return
 
-    def save_cache(self, input):
-        if self.oracle:
-            if not self.oracle_check(input):
-                return
+    def save_cache(self, input, step):
+        '''
+        Cache here contains the data that the student model will be trained on. 
+        '''
+        if self.oracle and not self.oracle_check(input):
+            return
         aux = copy.deepcopy(torch.flatten(input.llm_soft).tolist())
         aux.sort()
         aux = aux[-1] - aux[-2]
@@ -102,8 +108,37 @@ class handler_LLM:
             self.cache["gold_soft"].append(torch.flatten(input.gold_soft).tolist())
             self.cache["llm_soft"].append(torch.flatten(input.llm_soft).tolist())
         self.cache["llm_hard"].append(torch.flatten(input.llm_hard).tolist())
+        self.steps.append(step)
+
+    def reset_buffer(self):
+        '''
+        If cache contains more items than the retrain frequency, 
+        remove the older ones so that its length is at most equal to the retrain frequency.
+        '''
+        keys_to_trim = ["llm_soft", "llm_hard", "input_ids", "gold_hard", "gold_soft"]
+        
+        # Check the length of the lists in the keys that are present in the data
+        list_lengths = {key: len(self.cache[key]) for key in keys_to_trim if key in self.cache}
+        
+        if not list_lengths:
+            return self.cache  # No lists to trim
+        
+        # Ensure all lists are of the same length
+        if len(set(list_lengths.values())) != 1:
+            raise ValueError("All lists must have the same length.")
+        
+        # If the lists have more than retrain_freq items, trim them to the last retrain_freq items
+        if list_lengths[next(iter(list_lengths))] > self.args.retrain_freq:
+            print('Trimming cache')
+            for key in list_lengths.keys():
+                self.cache[key] = self.cache[key][-500:]
+        
+        return self.cache
 
     def decide(self, input):
+        '''
+        Decide whether to use budget for LLM annotation.
+        '''
         if self.oracle and not self.oracle_check(input):
             return False
         if self.oracle_BT and not self.oracle_check_BT(input):
@@ -134,18 +169,27 @@ class handler_LLM:
             if self.strat == "b2" and random.random() > (1 - self.rate):
                 return True
             if self.strat == "EN":
-                if self.EN[-1] > self.hparam:
+                if (self.args.dynamic_threshold == 1) and (len(self.EN) > self.window_size_threshold):
+                    if self.is_outlier(self.EN, 'gt'):
+                        return True
+                elif self.EN[-1] > self.hparam:
                     return True
             if self.strat == "BT":
-                if self.BT[-1] < self.hparam:
+                if (self.args.dynamic_threshold == 1) and (len(self.BT) > self.window_size_threshold):
+                    if self.is_outlier(self.BT, 'lt'):
+                        return True
+                elif self.BT[-1] < self.hparam:
                     return True
             if self.strat == "MV":
+                # here 5 6
                 if len(self.student_vec) < 5 or self.make_assembly(input):
                     return True
             if self.strat == "CS":
                 self.obtain_embed(input)
-                candidate, similarity = self.retrieve_candidate()
-                if similarity < self.hparam:
+                if (self.args.dynamic_threshold == 1) and (len(self.CS_similarities) > self.window_size_threshold):
+                    if self.is_outlier(self.CS_similarities, 'gt'):
+                        return True
+                elif self.CS_similarities[-1] < self.hparam:
                     return True
         self.retrain = False
         self.budget_arr = [b + self.cost for b in self.budget_arr]
@@ -181,7 +225,16 @@ class handler_LLM:
         self.labels_embeds[len(list(self.labels_embeds.keys()))] = self.output
         return
 
-    def query(self, input):
+    def query(self, input, step):
+        '''
+        Returns two values (decision, prediction)
+        * decision: if LLM used 1, otherwise 0
+        * prediction:  
+        Also sets wrap.performance which is a 3-digit binary number. Digit:
+        * 1: the decision
+        * 2: student acc
+        * 3: llm acc 
+        '''
         self.n_online += 1
         self.missing -= 1
         new_budgets = len(self.budget_arr) - len(self.budget_models)
@@ -189,7 +242,34 @@ class handler_LLM:
 
         self.output = self.student.query(input)
 
-        # why 1* 
+        self.calculate_acc(input)
+
+        previous_outputs = []
+        for budget_model in self.budget_models:
+            aux = aux_student(budget_model, self.student.args, self.task)
+            previous_outputs.append(aux.query(input))
+
+        # MS distance average
+        aux = self.output[0].sort().values.tolist()
+        self.BT.append(abs(aux[-1] - aux[-2]))
+        self.EN.append(abs(entropy(softmax(self.output[0][:100]))))
+        if self.args.strategy == 'CS':
+            candidate, similarity = self.retrieve_candidate()
+            self.CS_similarities.append(similarity)
+
+        if self.decide(input):
+            self.output = self.call_llm(input)
+            self.save_cache(input, step)
+            self.performance = "1" + str(self.st_acc) + str(self.llm_acc)
+            if self.strat == "CS":
+                self.save_embed()
+            return old_budgets * [0] + new_budgets * [
+                1
+            ], previous_outputs + new_budgets * [self.output]
+        self.performance = "0" + str(self.st_acc) + str(self.llm_acc)
+        return len(self.budget_arr) * [0], previous_outputs + new_budgets * [self.output]
+
+    def calculate_acc(self, input):
         self.st_acc = int(
             1
             * (self.output.copy()[0].argsort()[-1] == input.gold_soft.argsort()[0][-1])
@@ -201,30 +281,6 @@ class handler_LLM:
                 == input.gold_soft.argsort()[0][-1]
             )
         )
-
-        previous_outputs = []
-        for budget_model in self.budget_models:
-            aux = aux_student(budget_model, self.student.args, self.task)
-            previous_outputs.append(aux.query(input))
-
-        # MS distance average
-        aux = self.output[0].sort().values.tolist()
-        self.BT.append(abs(aux[-1] - aux[-2]))
-        self.EN.append(abs(entropy(softmax(self.output[0][:100]))))
-
-        if self.decide(input):
-            self.output = self.call_llm(input)
-            self.save_cache(input)
-            self.performance = "1" + str(self.st_acc) + str(self.llm_acc)
-            if self.strat == "CS":
-                self.save_embed()
-            return old_budgets * [0] + new_budgets * [
-                1
-            ], previous_outputs + new_budgets * [self.output]
-        self.performance = "0" + str(self.st_acc) + str(self.llm_acc)
-        return len(self.budget_arr) * [0], previous_outputs + new_budgets * [
-            self.output
-        ]
 
     def make_assembly(self, input):
         target = self.output[0].argmax()
@@ -245,6 +301,7 @@ class handler_LLM:
     def reorder_students(self):
         # First case: we do MV, we don't support multiple budgets
         if self.strat == "MV":
+            # here 5 6
             if len(self.student_vec) == 5:
                 for idx in range(4):
                     self.student_vec[idx] = copy.deepcopy(
@@ -264,3 +321,29 @@ class handler_LLM:
             self.retrain = False
             return
         return
+
+    def is_outlier(self, data, comparison):
+        '''
+        Determines whether the latest data-point is an outlier based on how much
+        its selection policy value deviates from the previous ones.
+        '''
+        # set to optimal params depending on the strategy
+        dyn_thr = 0.9 if self.args.strategy == 'CS' else 0.7
+
+        latest_value = data[-1]
+        previous_data = data[-self.window_size_threshold:-1]
+
+        mean = np.mean(previous_data)
+        std_dev = np.std(previous_data)
+        
+        latest_value = data[-1]
+        if comparison == 'gt':
+            threshold = (mean + std_dev) * dyn_thr
+            is_outlier = latest_value > threshold
+        else:
+            threshold = (mean - std_dev) * dyn_thr
+            if threshold < 0:
+                return False
+            is_outlier = latest_value < threshold
+        self.thresholds.append(threshold)
+        return is_outlier

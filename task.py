@@ -9,12 +9,19 @@ from functools import partial
 import pandas as pd
 import ast
 import json
-import pdb
+from shifts import (
+    label_shift, label_shift_partial, covariate
+    )
+import random
 
 
 class Task:
-    def __init__(self, task_name, tokenizer, soft_labels):
+    def __init__(self, task_name, tokenizer, soft_labels, with_shift, seed, perc_rand, shift_order):
         self.task_name = task_name
+        self.seed = seed
+        self.perc_rand = perc_rand
+        self.shift_order = shift_order
+        self.with_shift = with_shift
         DATA_DIR = os.getenv("DATA_PATH")
         self.path = os.path.join(DATA_DIR, task_name)
         self.tokenizer = tokenizer
@@ -30,6 +37,8 @@ class Task:
             self.classes = config["classes"]
             self.soft_classes = config["soft_classes"]
         self.data_path = config["training_data"]
+        if self.with_shift == 'covariate':
+            self.typos_data_path = config["typos_data"]
 
     def load_data(self):
         data = {}
@@ -37,10 +46,8 @@ class Task:
             fin = pd.read_csv(
                 os.path.join(self.path, split_path),
             )
-            if self.task_name == "ag_news":
-                fin = pd.read_csv(os.path.join(self.path, split_path), nrows=10000)
-                if split == "test":
-                    fin = pd.read_csv(os.path.join(self.path, split_path), nrows=1000)
+            fin = apply_data_distr_shift(self, fin, split)
+            print(fin["gold_hard"])
             inputs = list(fin["input"].values.astype(str))
             gold_hard = list(fin["gold_hard"].values.astype(str))
             if "llm_soft" in fin.columns:
@@ -152,6 +159,7 @@ class Task:
         processed_data = {}
 
         for split in self.data_path.keys():
+            print('----Split: ', split)
             max_samples = getattr(args, f"{split}_samples")
             self.raw_data[split] = random_subset(
                 dataset=self.raw_data[split],
@@ -171,7 +179,7 @@ class Task:
 
         online_dataloader = DataLoader(
             processed_data["train"],
-            shuffle=True,
+            shuffle=False,
             collate_fn=data_collator,
             batch_size=1,
         )
@@ -181,21 +189,9 @@ class Task:
             collate_fn=eval_collator,
             batch_size=args.per_device_eval_batch_size,
         )
-        idx_wrong = []
-        idx_right = []
-        for idx in range(len(processed_data["test"])):
-            tgt = (processed_data["test"]["gold_soft"][idx]).index(
-                max(processed_data["test"]["gold_soft"][idx])
-            )
-            llm_pred = (processed_data["test"]["llm_soft"][idx]).index(
-                max(processed_data["test"]["llm_soft"][idx])
-            )
-            if tgt != llm_pred:
-                idx_wrong.append(idx)
-            else:
-                idx_right.append(idx)
 
-        test_wrong = processed_data["test"].select(idx_wrong)
+        test_wrong = self.find_wrong_LLM_predictions(processed_data)
+
         test_wrong_dataloader = DataLoader(
             test_wrong,
             collate_fn=eval_collator,
@@ -215,15 +211,37 @@ class Task:
         }
         return
 
+    def find_wrong_LLM_predictions(self, processed_data):
+        '''
+        Find the test samples where the LLMs prediction doesn't match the gold label
+        '''
+        idx_wrong = []
+        for idx in range(len(processed_data["test"])):
+            tgt = (processed_data["test"]["gold_soft"][idx]).index(
+                max(processed_data["test"]["gold_soft"][idx])
+            )
+            llm_pred = (processed_data["test"]["llm_soft"][idx]).index(
+                max(processed_data["test"]["llm_soft"][idx])
+            )
+            if tgt != llm_pred:
+                idx_wrong.append(idx)
+        return processed_data["test"].select(idx_wrong)
 
 def random_subset(dataset, max_samples: int, seed: int = 42):
+    '''
+    Random subset of the dataset maintaining its original order
+    '''
     if max_samples >= len(dataset) or max_samples == -1:
         return dataset
 
-    generator = torch.Generator().manual_seed(seed)
-    perm = torch.randperm(len(dataset), generator=generator)
-    return Subset(dataset, perm[:max_samples].tolist())
-
+    # Set the random seed for reproducibility
+    random.seed(seed)
+    
+    # Randomly sample indices and sort them to maintain the original order
+    selected_indices = sorted(random.sample(range(len(dataset)), max_samples))
+    
+    # Return the subset containing the selected indices
+    return Subset(dataset, selected_indices)
 
 def get_task(accelerator, args, model=None):
     tokenizer = T5Tokenizer.from_pretrained(
@@ -231,7 +249,7 @@ def get_task(accelerator, args, model=None):
     )
 
     # load config, data, and preprocess
-    task = Task(args.task_name, tokenizer, args.soft_labels)
+    task = Task(args.task_name, tokenizer, args.soft_labels, args.with_shift, args.seed, args.perc_rand, args.shift_order)
     if task.is_classification:
         task.load_classes()
     task.preprocess(accelerator, args, model=None)
@@ -244,14 +262,31 @@ def make_datacollator(args, tokenizer, processed_data, model=None):
     aux = processed_data.train_test_split(test_size=0.1)
     train_dataloader = DataLoader(
         aux["train"],
-        shuffle=True,
+        shuffle=False,
         collate_fn=data_collator,
         batch_size=args.per_device_train_batch_size,
     )
     eval_dataloader = DataLoader(
         aux["test"],
-        shuffle=True,
+        shuffle=False,
         collate_fn=data_collator,
         batch_size=args.per_device_eval_batch_size,
     )
     return train_dataloader, eval_dataloader
+
+def apply_data_distr_shift(self, fin, split):
+    # Perform synthetic dataset operations.
+    print(self.with_shift)
+    if self.with_shift=='label':
+        fin = label_shift(fin, self.shift_order, self.seed)
+        print('label')
+    if self.with_shift=='label-shift-partial':
+        fin = label_shift_partial(fin, self.perc_rand, self.shift_order, self.seed)
+        print('label_shift_partial', self.perc_rand)
+    if self.with_shift=='covariate':
+        print('Split:', split)
+        typos_path = os.path.join(self.path, self.typos_data_path[split])
+        fin = covariate(fin, self.shift_order, self.perc_rand, typos_path, self.shift_order, self.seed)
+        print('covariate shift typos')
+        print(fin['input'])
+    return fin

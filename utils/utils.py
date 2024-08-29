@@ -10,7 +10,7 @@ import numpy as np
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 from accelerate.utils import set_seed
-import neptune.new as neptune
+import neptune 
 import pdb
 
 
@@ -48,13 +48,13 @@ def setup_basics(accelerator, logger, args):
         tags = [""]
     PROJECT_NAME = os.getenv("PROJECT_NAME_NEPTUNE")
     API_TOKEN_NEPTUNE = os.getenv("API_TOKEN_NEPTUNE")
-    # run = neptune.init_run(
-    #     project=PROJECT_NAME,
-    #     tags=tags,  # custom_run_id,
-    #     api_token=API_TOKEN_NEPTUNE,
-    # )
+    run = neptune.init_run(
+        project=PROJECT_NAME,
+        tags=tags,  # custom_run_id,
+        api_token=API_TOKEN_NEPTUNE,
+    )
 
-    return 
+    return run
 
 
 def neptune_log(run, pref, stats, epoch):

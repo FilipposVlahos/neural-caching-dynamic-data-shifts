@@ -1,6 +1,7 @@
 from utils import (
     neptune_log,
 )
+import numpy as np
 import pdb
 
 
@@ -33,6 +34,20 @@ def log_final(run):
     )
     return
 
+def log_examples_selected(run, steps):
+    print('Steps', steps)
+    run['examples_selected/steps'].extend(steps)
+    return
+
+def log_strategy_data(run, strat, data):
+    print('Strategy data', data)
+    run['strategy_data/' + strat].extend(data)
+    return
+
+def log_thresholds(run, data):
+    print('Threshold data', data)
+    run['strategy_data/thresholds'].extend(data)
+    return
 
 def reset_avg_online_metrics(stats):
     avg_stats = {}
@@ -42,7 +57,7 @@ def reset_avg_online_metrics(stats):
     return avg_stats
 
 
-def get_online_metrics_mult(args, metric, sample, pred, decision, budgets, performance):
+def get_online_metrics_mult(args, metric, sample, pred, decision, budgets, performance, all_pred, x_samples_pred):
     stats = {"performance": performance}
     for idx, b in enumerate(budgets):
         stats[str(b) + "-dec"] = decision[idx]
@@ -64,6 +79,12 @@ def get_online_metrics_mult(args, metric, sample, pred, decision, budgets, perfo
             for idx, online_metric in enumerate(online_metrics):
                 if idx == 0:
                     stats[f"{b}-{name}_{idx}"] = online_metric
+                    all_pred.append(online_metric)
+                    stats[f"{b}-{name}_{idx}accuracy-accum"] =  np.mean(all_pred)
+                    if len(x_samples_pred) > 100: 
+                        x_samples_pred.pop(0)
+                    x_samples_pred.append(online_metric)
+                    stats[f"{b}-{name}_{idx}-100day-moving-acc-accum"] =  np.mean(x_samples_pred)
     return stats
 
 
